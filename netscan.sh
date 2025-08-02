@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NetScan Professional
-# Version 2.1
+# Version 1.0
 
 # Colors for the output
 RED='\033[0;31m'
@@ -9,8 +9,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-PURPLE='\033[0;35m'
-ORANGE='\033[0;33m'
+PURPLE='\033[0;35m'                                        ORANGE='\033[0;33m'
 NC='\033[0m' # No Color
 
 # OS detection
@@ -23,7 +22,7 @@ fi
 
 # Display help information
 show_help() {
-    echo -e "${GREEN}NetScan Professional - Network Scanning Tool v2.1${NC}"
+    echo -e "${GREEN}NetScan Professional - Network Scanning Tool v1.0${NC}"
     echo -e "Usage: ${YELLOW}$0 [options] ${RED}[target]${NC}"
     echo
     echo "Options:"
@@ -94,7 +93,7 @@ show_help() {
 
 # Show version information
 show_version() {
-    echo -e "${GREEN}NetScan Professional v2.1${NC}"
+    echo -e "${GREEN}NetScan Professional v1.0${NC}"
     echo "Author: Network Security Expert"
     echo "License: MIT"
     exit 0
@@ -493,6 +492,12 @@ run_nmap() {
         echo -e "${CYAN}PORT      STATE  SERVICE        VERSION${NC}"
         echo -e "----------------------------------------"
 
+        # Define critical services
+        critical_services=(
+            ssh ftp telnet smtp microsoft-ds netbios netbios-ssn ms-wbt-server
+            snmp pop3 imap mysql vnc
+        )
+
         # Extract and format open ports with color coding
         grep "open" "$clean_file" | while read -r line; do
             # Remove any remaining special characters
@@ -514,7 +519,7 @@ run_nmap() {
             fi
 
             # Highlight critical services
-            if [[ "$service" =~ ^(ssh|ftp|telnet|smtp|http|https|mysql|microsoft-ds|netbios|rdp|vnc)$ ]]; then
+            if [[ " ${critical_services[@]} " =~ " $service " ]]; then
                 color="${RED}"
             fi
 
@@ -530,14 +535,19 @@ run_nmap() {
         grep "OS details" "$clean_file" | cut -d: -f2 | sed 's/^ *//; s/  */ /g' | sed 's/^/  /'
     fi
 
-    # Show interesting ports summary
+    # Show security note summary
     if grep -q "open" "$clean_file"; then
-        echo -e "\n${PURPLE}  [*] Critical Service Summary:${NC}"
-        grep "open" "$clean_file" | grep -E "ssh|ftp|telnet|smtp|http|https|mysql|microsoft-ds|netbios|rdp|vnc" | while read -r line; do
-            port=$(echo "$line" | awk '{print $1}')
-            service=$(echo "$line" | awk '{print $3}')
-            version=$(echo "$line" | awk '{for(i=4;i<=NF;i++) printf $i" "; print ""}')
-            echo -e "${RED}  [!] Critical service on $port: ${service} - ${version}${NC}"
+        echo -e "\n${PURPLE}  [*] Security Note Summary:${NC}"
+        grep "open" "$clean_file" | while read -r line; do
+            clean_line=$(echo "$line" | tr -cd '\11\12\15\40-\176')
+            service=$(echo "$clean_line" | awk '{print $3}')
+
+            # Check if service is in critical list
+            if [[ " ${critical_services[@]} " =~ " $service " ]]; then
+                port=$(echo "$clean_line" | awk '{print $1}')
+                version=$(echo "$clean_line" | awk '{for(i=4;i<=NF;i++) printf $i" "; print ""}')
+                echo -e "${RED}  [!] Security-critical service on $port: ${service} - ${version}${NC}"
+            fi
         done
     fi
 
@@ -589,7 +599,7 @@ main() {
 
     # Ultra-minimalist banner for Termux
     echo -e "${GREEN}╔══════════════════╗"
-    echo -e "║ NetScan ${BLUE}v2.1${GREEN} ║"
+    echo -e "║ NetScan ${BLUE}v1.0${GREEN} ║"
     echo -e "╚══════════════════╝${NC}"
     echo -e "OS: ${YELLOW}$OS${NC}"
     echo -e "Scan: ${YELLOW}$([ "$fast_scan" -eq 1 ] && echo "Fast" || echo "Full")${NC}"
