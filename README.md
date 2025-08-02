@@ -1,5 +1,5 @@
 ### NetScan Professional Overview
-**NetScan Professional v2.1** is a powerful network reconnaissance tool for Linux and Termux (Android). It automates comprehensive scans including WHOIS lookups, DNS analysis, IP geolocation, and Nmap-based port/service detection. Key features:
+**NetScan Professional v1.0** is a powerful network reconnaissance tool for Linux and Termux (Android). It automates comprehensive scans including WHOIS lookups, DNS analysis, IP geolocation, and Nmap-based port/service detection. Key features:
 
 1. **Host Check**: Verifies target reachability via ICMP ping.
 2. **WHOIS Lookup**: Retrieves domain/IP registration details.
