@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NetScan Professional
-# Version 1.0
+# Version 1.1
 
 # Colors for the output
 RED='\033[0;31m'
@@ -10,12 +10,10 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 PURPLE='\033[0;35m'                                        ORANGE='\033[0;33m'
-NC='\033[0m' # No Color
-
+NC='\033[0m' # No Color                                    
 # OS detection
 OS="unknown"
-if [ -f /etc/os-release ]; then
-    OS="linux"
+if [ -f /etc/os-release ]; then                                OS="linux"
 elif [ -d /data/data/com.termux/files/usr ]; then
     OS="termux"
 fi
@@ -509,21 +507,16 @@ run_nmap() {
             service=$(echo "$clean_line" | awk '{print $3}')
             version=$(echo "$clean_line" | awk '{for(i=4;i<=NF;i++) printf $i" "; print ""}' | sed 's/ $//')
 
-            # Apply color based on port number range
-            if [ "$port_num" -lt 1024 ]; then
-                color="${YELLOW}"      # Well-known ports
-            elif [ "$port_num" -lt 49152 ]; then
-                color="${GREEN}"       # Registered ports
-            else
-                color="${CYAN}"        # Dynamic/private ports
-            fi
-
             # Highlight critical services
             if [[ " ${critical_services[@]} " =~ " $service " ]]; then
-                color="${RED}"
+                service_color="${RED}"
+            else
+                service_color="${GREEN}"
             fi
 
-            printf "%s%-9s %-6s %-14s %s${NC}\n" "$color" "$port_field" "$state" "$service" "$version"
+            # Выводим порт и состояние без цвета, сервис - с цветом
+            printf "%-9s ${GREEN}%-6s ${service_color}%-14s ${NC}%s\n" \
+                   "$port_field" "$state" "$service" "$version"
         done
     else
         echo -e "${RED}  [!] No open ports found${NC}"
@@ -599,7 +592,7 @@ main() {
 
     # Ultra-minimalist banner for Termux
     echo -e "${GREEN}╔══════════════════╗"
-    echo -e "║ NetScan ${BLUE}v1.0${GREEN} ║"
+    echo -e "║ NetScan ${BLUE}v1.1${GREEN} ║"
     echo -e "╚══════════════════╝${NC}"
     echo -e "OS: ${YELLOW}$OS${NC}"
     echo -e "Scan: ${YELLOW}$([ "$fast_scan" -eq 1 ] && echo "Fast" || echo "Full")${NC}"
