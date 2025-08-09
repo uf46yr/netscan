@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # NetScan Professional
-# Version 1.1
+# Version 1.3
 
 # Colors for the output
 RED='\033[0;31m'
@@ -9,18 +9,21 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-PURPLE='\033[0;35m'                                        ORANGE='\033[0;33m'
-NC='\033[0m' # No Color                                    
+PURPLE='\033[0;35m'
+ORANGE='\033[0;33m'
+NC='\033[0m' # No Color
+
 # OS detection
 OS="unknown"
-if [ -f /etc/os-release ]; then                                OS="linux"
+if [ -f /etc/os-release ]; then
+    OS="linux"
 elif [ -d /data/data/com.termux/files/usr ]; then
     OS="termux"
 fi
 
 # Display help information
 show_help() {
-    echo -e "${GREEN}NetScan Professional - Network Scanning Tool v1.0${NC}"
+    echo -e "${GREEN}NetScan Professional - Network Scanning Tool v1.3${NC}"
     echo -e "Usage: ${YELLOW}$0 [options] ${RED}[target]${NC}"
     echo
     echo "Options:"
@@ -40,6 +43,9 @@ show_help() {
     echo "  - Service and version detection"
     echo "  - OS detection (with root privileges)"
     echo "  - Host availability check"
+    echo "  - Vulnerability scanning (vulners.nse)"
+    echo "  - Cloudflare bypass techniques"
+    echo "  - DDoS Guard bypass techniques"
     echo
     echo -e "${BLUE}Installation Instructions:${NC}"
 
@@ -54,6 +60,7 @@ show_help() {
         echo "  4. Run script:"
         echo -e "     ${YELLOW}./netscan.sh ${RED}example.com${NC}"
         echo -e "     ${YELLOW}./netscan.sh -f ${RED}192.168.1.1${NC} ${GREEN}# Fast scan${NC}"
+        echo -e "     ${YELLOW}./netscan.sh -o scan_report.txt ${RED}example.com${NC} ${GREEN}# Save results${NC}"
     else
         echo -e "${GREEN}For Linux (Debian/Ubuntu):${NC}"
         echo "  1. Update packages:"
@@ -81,7 +88,8 @@ show_help() {
     echo -e "  ${CYAN}Fast Scan${NC}:"
     echo "    - Scans top 1000 ports"
     echo "    - Quick service identification"
-    echo "    - Optimized for speed"
+    echo "    - MAX scanning speed (T5)"
+    echo "    - Vulnerability scanning"
     echo -e "    ${YELLOW}./netscan.sh -f ${RED}target${NC}"
 
     echo
@@ -91,7 +99,7 @@ show_help() {
 
 # Show version information
 show_version() {
-    echo -e "${GREEN}NetScan Professional v1.0${NC}"
+    echo -e "${GREEN}NetScan Professional v1.3${NC}"
     echo "Author: Network Security Expert"
     echo "License: MIT"
     exit 0
@@ -218,6 +226,307 @@ get_whois() {
     echo
 }
 
+# Helper function to check if IP is in CIDR range
+ip_in_range() {
+    local ip="$1"
+    local cidr="$2"
+
+    if ! command -v ipcalc &> /dev/null; then
+        # Fallback to simple check if ipcalc not available
+        [[ "$ip" == "${cidr%/*}"* ]] && return 0 || return 1
+    fi
+
+    local ip_dec
+    ip_dec=$(echo "$ip" | tr '.' ' ' | awk '{print ($1*(256^3)) + ($2*(256^2)) + ($3*256) + $4}')
+    local network="${cidr%/*}"
+    local mask="${cidr#*/}"
+
+    local net_dec
+    net_dec=$(echo "$network" | tr '.' ' ' | awk '{print ($1*(256^3)) + ($2*(256^2)) + ($3*256) + $4}')
+
+    local mask_dec=$((0xffffffff << (32 - mask) & 0xffffffff))
+
+    if (( (ip_dec & mask_dec) == (net_dec & mask_dec) )); then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Cloudflare bypass detection and techniques
+bypass_cloudflare() {
+    local domain="$1"
+    echo -e "${CYAN}[*] Cloudflare Bypass Techniques: ${YELLOW}$domain${NC}"
+
+    # Check if Cloudflare is detected
+    local ns_result
+    ns_result=$(dig +short ns "$domain" 2>/dev/null)
+    local is_cloudflare=0
+
+    if echo "$ns_result" | grep -qi "cloudflare"; then
+        is_cloudflare=1
+        echo -e "${RED}  [Cloudflare] Domain protected by Cloudflare DNS${NC}"
+    fi
+
+    # Check Cloudflare IP ranges (common IPv4 ranges)
+    local ip_checks=0
+    local a_record
+    a_record=$(dig +short a "$domain" 2>/dev/null | head -1)
+
+    if [[ -n "$a_record" ]]; then
+        # Check if IP belongs to Cloudflare
+        if [[ $a_record =~ ^(173\.245\.4[8-9]|173\.245\.5[0-9]|173\.245\.6[0-3]|103\.21\.24[4-7]|103\.22\.20[0-3]) ]]; then
+            is_cloudflare=1
+            ip_checks=1
+            echo -e "${RED}  [Cloudflare] IP $a_record belongs to Cloudflare network${NC}"
+        fi
+    fi
+
+    if [[ $is_cloudflare -eq 0 ]]; then
+        echo -e "${GREEN}  [Status] No Cloudflare protection detected${NC}"
+        return
+    fi
+
+    echo -e "${PURPLE}  [Bypass Methods] Trying to discover real IP:${NC}"
+
+    # 1. Check common subdomains
+    echo -e "${BLUE}  [DNS] Checking common subdomains:${NC}"
+    local subdomains=("direct" "origin" "ns1" "ns2" "mail" "ftp" "cpanel" "whm" "server" "old" "test")
+    local found_subdomain=0
+
+    for sub in "${subdomains[@]}"; do
+        local full_sub="${sub}.${domain}"
+        local sub_ip
+        sub_ip=$(dig +short a "$full_sub" 2>/dev/null | head -1)
+
+        if [[ -n "$sub_ip" ]]; then
+            # Skip Cloudflare IPs if we're detecting them
+            if [[ $ip_checks -eq 1 ]] && [[ $sub_ip == "$a_record" ]]; then
+                continue
+            fi
+
+            echo -e "    ${GREEN}$full_sub -> $sub_ip${NC}"
+            found_subdomain=1
+        fi
+    done
+
+    if [[ $found_subdomain -eq 0 ]]; then
+        echo -e "    ${RED}No revealing subdomains found${NC}"
+    fi
+
+    # 2. Check MX records
+    echo -e "${BLUE}  [MX] Mail server records:${NC}"
+    local mx_records
+    mx_records=$(dig +short mx "$domain" 2>/dev/null)
+    local found_mx=0
+
+    if [[ -n "$mx_records" ]]; then
+        while read -r priority record; do
+            local mx_ip
+            mx_ip=$(dig +short a "$record" 2>/dev/null | head -1)
+            if [[ -n "$mx_ip" ]]; then
+                echo -e "    ${GREEN}$record -> $mx_ip (Priority: $priority)${NC}"
+                found_mx=1
+            fi
+        done <<< "$mx_records"
+    fi
+
+    if [[ $found_mx -eq 0 ]]; then
+        echo -e "    ${RED}No mail servers found${NC}"
+    fi
+
+    # 3. Historical DNS data
+    echo -e "${BLUE}  [History] Historical DNS lookups:${NC}"
+    echo -e "    ${YELLOW}Use external tools for historical data:${NC}"
+    echo -e "    - SecurityTrails: ${CYAN}https://securitytrails.com/domain/${domain}/dns${NC}"
+    echo -e "    - ViewDNS: ${CYAN}https://viewdns.info/iphistory/?domain=${domain}${NC}"
+    echo -e "    - DNSlytics: ${CYAN}https://dnslytics.com/domain/${domain}${NC}"
+
+    # 4. Check DNS records from different nameservers
+    echo -e "${BLUE}  [DNS] Checking alternative nameservers:${NC}"
+    local nameservers=("8.8.8.8" "1.1.1.1" "9.9.9.9" "208.67.222.222")
+    local found_alt=0
+
+    for ns in "${nameservers[@]}"; do
+        local alt_ip
+        alt_ip=$(dig @"$ns" +short a "$domain" 2>/dev/null | head -1)
+
+        if [[ -n "$alt_ip" ]] && [[ "$alt_ip" != "$a_record" ]]; then
+            echo -e "    ${GREEN}${ns} -> $alt_ip${NC}"
+            found_alt=1
+        fi
+    done
+
+    if [[ $found_alt -eq 0 ]]; then
+        echo -e "    ${RED}No alternative records found${NC}"
+    fi
+
+    # 5. SSL certificate analysis
+    echo -e "${BLUE}  [SSL] Certificate analysis:${NC}"
+    echo -e "    ${YELLOW}Use external tools for SSL analysis:${NC}"
+    echo -e "    - Censys: ${CYAN}https://search.censys.io/search?q=${domain}${NC}"
+    echo -e "    - CRT.sh: ${CYAN}https://crt.sh/?q=${domain}${NC}"
+    echo -e "    - SSLMate: ${CYAN}https://sslmate.com/certspotter/api/${domain}${NC}"
+
+    echo -e "${PURPLE}  [Note] Cloudflare bypass requires manual verification of discovered IPs${NC}"
+}
+
+# DDoS Guard bypass detection and techniques
+bypass_ddos_guard() {
+    local domain="$1"
+    echo -e "${CYAN}[*] DDoS Guard Bypass Techniques: ${YELLOW}$domain${NC}"
+
+    # Known DDoS Guard IP ranges
+    local ddos_guard_ranges=(
+        "195.133.0.0/16"
+        "185.174.136.0/22"
+        "91.204.176.0/22"
+        "91.204.180.0/22"
+        "91.204.184.0/22"
+    )
+
+    local is_ddos_guard=0
+    local a_record
+    a_record=$(dig +short a "$domain" 2>/dev/null | head -1)
+
+    if [[ -n "$a_record" ]]; then
+        # Check if IP belongs to DDoS Guard network
+        for range in "${ddos_guard_ranges[@]}"; do
+            if ip_in_range "$a_record" "$range"; then
+                is_ddos_guard=1
+                echo -e "${RED}  [DDoS Guard] IP $a_record belongs to DDoS Guard network${NC}"
+                break
+            fi
+        done
+    fi
+
+    # Check for DDoS Guard nameservers
+    local ns_result
+    ns_result=$(dig +short ns "$domain" 2>/dev/null)
+    if echo "$ns_result" | grep -qi "ddos-guard"; then
+        is_ddos_guard=1
+        echo -e "${RED}  [DDoS Guard] Domain protected by DDoS Guard DNS${NC}"
+    fi
+
+    if [[ $is_ddos_guard -eq 0 ]]; then
+        echo -e "${GREEN}  [Status] No DDoS Guard protection detected${NC}"
+        return
+    fi
+
+    echo -e "${PURPLE}  [Bypass Methods] Trying to discover real IP:${NC}"
+
+    # 1. Check specialized subdomains
+    echo -e "${BLUE}  [DNS] Checking specialized subdomains:${NC}"
+    local subdomains=("origin" "direct" "ns1" "ns2" "mail" "smtp" "server" "host" "static" "assets")
+    local found_subdomain=0
+
+    for sub in "${subdomains[@]}"; do
+        local full_sub="${sub}.${domain}"
+        local sub_ip
+        sub_ip=$(dig +short a "$full_sub" 2>/dev/null | head -1)
+
+        if [[ -n "$sub_ip" ]]; then
+            # Skip DDoS Guard IPs
+            local is_ddos_ip=0
+            for range in "${ddos_guard_ranges[@]}"; do
+                if ip_in_range "$sub_ip" "$range"; then
+                    is_ddos_ip=1
+                    break
+                fi
+            done
+
+            if [[ $is_ddos_ip -eq 0 ]]; then
+                echo -e "    ${GREEN}$full_sub -> $sub_ip${NC}"
+                found_subdomain=1
+            fi
+        fi
+    done
+
+    if [[ $found_subdomain -eq 0 ]]; then
+        echo -e "    ${RED}No revealing subdomains found${NC}"
+    fi
+
+    # 2. Check MX records
+    echo -e "${BLUE}  [MX] Mail server records:${NC}"
+    local mx_records
+    mx_records=$(dig +short mx "$domain" 2>/dev/null)
+    local found_mx=0
+
+    if [[ -n "$mx_records" ]]; then
+        while read -r priority record; do
+            local mx_ip
+            mx_ip=$(dig +short a "$record" 2>/dev/null | head -1)
+            if [[ -n "$mx_ip" ]]; then
+                # Check if MX IP is not DDoS Guard
+                local is_ddos_ip=0
+                for range in "${ddos_guard_ranges[@]}"; do
+                    if ip_in_range "$mx_ip" "$range"; then
+                        is_ddos_ip=1
+                        break
+                    fi
+                done
+
+                if [[ $is_ddos_ip -eq 0 ]]; then
+                    echo -e "    ${GREEN}$record -> $mx_ip (Priority: $priority)${NC}"
+                    found_mx=1
+                fi
+            fi
+        done <<< "$mx_records"
+    fi
+
+    if [[ $found_mx -eq 0 ]]; then
+        echo -e "    ${RED}No revealing mail servers found${NC}"
+    fi
+
+    # 3. Historical DNS data
+    echo -e "${BLUE}  [History] Historical DNS lookups:${NC}"
+    echo -e "    ${YELLOW}Use external tools for historical data:${NC}"
+    echo -e "    - SecurityTrails: ${CYAN}https://securitytrails.com/domain/${domain}/dns${NC}"
+    echo -e "    - ViewDNS: ${CYAN}https://viewdns.info/iphistory/?domain=${domain}${NC}"
+    echo -e "    - DNSlytics: ${CYAN}https://dnslytics.com/domain/${domain}${NC}"
+
+    # 4. Check DNS records from different nameservers
+    echo -e "${BLUE}  [DNS] Checking alternative nameservers:${NC}"
+    local nameservers=("8.8.8.8" "1.1.1.1" "9.9.9.9" "208.67.222.222" "84.200.69.80")
+    local found_alt=0
+
+    for ns in "${nameservers[@]}"; do
+        local alt_ip
+        alt_ip=$(dig @"$ns" +short a "$domain" 2>/dev/null | head -1)
+
+        if [[ -n "$alt_ip" ]] && [[ "$alt_ip" != "$a_record" ]]; then
+            # Check if alternative IP is not DDoS Guard
+            local is_ddos_ip=0
+            for range in "${ddos_guard_ranges[@]}"; do
+                if ip_in_range "$alt_ip" "$range"; then
+                    is_ddos_ip=1
+                    break
+                fi
+            done
+
+            if [[ $is_ddos_ip -eq 0 ]]; then
+                echo -e "    ${GREEN}${ns} -> $alt_ip${NC}"
+                found_alt=1
+            fi
+        fi
+    done
+
+    if [[ $found_alt -eq 0 ]]; then
+        echo -e "    ${RED}No alternative records found${NC}"
+    fi
+
+    # 5. Check for domain fronting opportunities
+    echo -e "${BLUE}  [Domain Fronting] Possible fronting techniques:${NC}"
+    echo -e "    ${YELLOW}1. Cloudflare fronting:${NC}"
+    echo -e "       curl -H \"Host: ${domain}\" https://cloudflare.com"
+    echo -e "    ${YELLOW}2. AWS CloudFront fronting:${NC}"
+    echo -e "       curl -H \"Host: ${domain}\" https://d111111abcdef8.cloudfront.net"
+    echo -e "    ${YELLOW}3. Google Cloud CDN fronting:${NC}"
+    echo -e "       curl -H \"Host: ${domain}\" https://storage.googleapis.com"
+
+    echo -e "${PURPLE}  [Note] DDoS Guard bypass requires manual verification of discovered IPs${NC}"
+}
+
 # DNS records lookup without TXT records
 get_dns() {
     local target="$1"
@@ -290,6 +599,62 @@ get_dns() {
     else
         echo "$ns_result" | sed 's/^/    /'
         has_records=1
+    fi
+
+    # Cloudflare bypass for domains
+    if [[ ! $target =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        local is_cloudflare=0
+
+        # Check NS for cloudflare
+        if echo "$ns_result" | grep -qi "cloudflare"; then
+            is_cloudflare=1
+        fi
+
+        # Check A record for Cloudflare IPs
+        if [[ -n "$a_result" ]]; then
+            for ip in $a_result; do
+                if [[ $ip =~ ^(173\.245\.4[8-9]|173\.245\.5[0-9]|173\.245\.6[0-3]|103\.21\.24[4-7]|103\.22\.20[0-3]) ]]; then
+                    is_cloudflare=1
+                    break
+                fi
+            done
+        fi
+
+        if [[ $is_cloudflare -eq 1 ]]; then
+            bypass_cloudflare "$target"
+        fi
+
+        # DDoS Guard detection
+        local is_ddos_guard=0
+
+        # Check NS for DDoS Guard
+        if echo "$ns_result" | grep -qi "ddos-guard"; then
+            is_ddos_guard=1
+        fi
+
+        # Check A record for DDoS Guard IPs
+        local ddos_guard_ranges=(
+            "195.133.0.0/16"
+            "185.174.136.0/22"
+            "91.204.176.0/22"
+            "91.204.180.0/22"
+            "91.204.184.0/22"
+        )
+
+        if [[ -n "$a_result" ]]; then
+            for ip in $a_result; do
+                for range in "${ddos_guard_ranges[@]}"; do
+                    if ip_in_range "$ip" "$range"; then
+                        is_ddos_guard=1
+                        break 2
+                    fi
+                done
+            done
+        fi
+
+        if [[ $is_ddos_guard -eq 1 ]]; then
+            bypass_ddos_guard "$target"
+        fi
     fi
 
     if [ $has_records -eq 0 ]; then
@@ -412,7 +777,7 @@ remove_ansi_sequences() {
     sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\x1b\[[0-9;]*[a-zA-Z]//g'
 }
 
-# Professional Nmap scanning function
+# Professional Nmap scanning function with enhanced vulnerability display
 run_nmap() {
     local target="$1"
     local is_reachable="$2"
@@ -420,7 +785,20 @@ run_nmap() {
     local output_file="$4"
 
     echo -e "${CYAN}[*] Running Professional Nmap scan: ${YELLOW}$target${NC}"
-    local options="-T4 -sV --open --min-hostgroup 64"
+    local options=""
+
+    # Set timing template based on scan type
+    if [ "$fast_scan" -eq 1 ]; then
+        options+="-T5 "  # MAX speed for fast scans
+        echo -e "${GREEN}  [+] Fast scan: Top 1000 ports with MAX speed (T5)${NC}"
+        echo -e "${YELLOW}  [~] Estimated time: 1-5 minutes${NC}"
+    else
+        options+="-T4 "  # Aggressive for full scans
+        echo -e "${GREEN}  [+] Comprehensive scan: All 65535 ports${NC}"
+        echo -e "${YELLOW}  [~] Estimated time: 10-30 minutes${NC}"
+    fi
+
+    options+="-sV --open --min-hostgroup 64"
 
     # Add OS detection if running as root
     if [ "$(id -u)" = "0" ]; then
@@ -442,12 +820,24 @@ run_nmap() {
     # Set port range based on scan type
     if [ "$fast_scan" -eq 1 ]; then
         options+=" --top-ports 1000"
-        echo -e "${GREEN}  [+] Fast scan: Top 1000 ports${NC}"
-        echo -e "${YELLOW}  [~] Estimated time: 1-5 minutes${NC}"
     else
         options+=" -p-"
-        echo -e "${GREEN}  [+] Comprehensive scan: All 65535 ports${NC}"
-        echo -e "${YELLOW}  [~] Estimated time: 10-30 minutes${NC}"
+    fi
+
+    # Add vulnerability scanning if script is available
+    local vulners_script=""
+    if [ "$OS" = "termux" ]; then
+        vulners_script="/data/data/com.termux/files/usr/share/nmap/scripts/vulners.nse"
+    else
+        vulners_script="/usr/share/nmap/scripts/vulners.nse"
+    fi
+
+    if [ -f "$vulners_script" ]; then
+        options+=" --script=vulners.nse"
+        echo -e "${GREEN}  [+] Vulnerability scanning with vulners.nse enabled${NC}"
+    else
+        echo -e "${YELLOW}  [!] Vulnerability scanning script not found. To install:${NC}"
+        echo -e "${YELLOW}      curl -s https://raw.githubusercontent.com/vulnersCom/nmap-vulners/master/vulners.nse > '$vulners_script'${NC}"
     fi
 
     # Add output formats if output file is specified
@@ -544,6 +934,66 @@ run_nmap() {
         done
     fi
 
+    # Enhanced vulnerability findings with RCE highlighting
+    if grep -q "vulners" "$clean_file"; then
+        echo -e "\n${PURPLE}  [*] Vulnerability Findings:${NC}"
+
+        # Extract and format vulnerabilities
+        grep -A 6 "vulners" "$clean_file" | while IFS= read -r line; do
+            # Skip unwanted lines
+            if echo "$line" | grep -qE "https://|^$"; then
+                continue
+            fi
+
+            # Remove special characters and trim spaces
+            clean_line=$(echo "$line" | sed -e 's/|//g' -e 's/^ *//' -e 's/ *$//')
+
+            # Skip empty lines
+            if [ -z "$clean_line" ]; then
+                continue
+            fi
+
+            # Check for RCE (Remote Code Execution) specifically
+            if echo "$clean_line" | grep -qi "remote code execution"; then
+                # Highlight RCE vulnerabilities in red
+                echo -e "  ${RED}[RCE] ${clean_line}${NC}"
+                continue
+            fi
+
+            # Color coding by severity
+            if echo "$clean_line" | grep -qi "critical"; then
+                color="${RED}"
+            elif echo "$clean_line" | grep -qi "high"; then
+                color="${ORANGE}"
+            elif echo "$clean_line" | grep -qi "medium"; then
+                color="${YELLOW}"
+            elif echo "$clean_line" | grep -qi "low"; then
+                color="${GREEN}"
+            elif echo "$clean_line" | grep -q "CVE-"; then
+                # Default color for CVE without explicit severity
+                color="${CYAN}"
+            else
+                color="${NC}"
+            fi
+
+            # Format CVE IDs specifically
+            if echo "$clean_line" | grep -q "CVE-"; then
+                # Extract CVE ID and description
+                cve_id=$(echo "$clean_line" | grep -o 'CVE-[0-9]\{4\}-[0-9]\+')
+                cve_desc=$(echo "$clean_line" | sed "s/$cve_id//")
+
+                # Print with special formatting
+                echo -e "  ${color}[${cve_id}]${NC} ${cve_desc}"
+            else
+                # Print normal vulnerability lines
+                echo -e "  ${color}${clean_line}${NC}"
+            fi
+        done
+
+        # Add note about RCE vulnerabilities
+        echo -e "\n${RED}  [*] RCE = Remote Code Execution (extremely critical)${NC}"
+    fi
+
     rm -f "$temp_file" "$clean_file"
 }
 
@@ -592,7 +1042,7 @@ main() {
 
     # Ultra-minimalist banner for Termux
     echo -e "${GREEN}╔══════════════════╗"
-    echo -e "║ NetScan ${BLUE}v1.1${GREEN} ║"
+    echo -e "║ NetScan ${BLUE}v1.3${GREEN} ║"
     echo -e "╚══════════════════╝${NC}"
     echo -e "OS: ${YELLOW}$OS${NC}"
     echo -e "Scan: ${YELLOW}$([ "$fast_scan" -eq 1 ] && echo "Fast" || echo "Full")${NC}"
