@@ -26,7 +26,7 @@
 3. **Run Scans**:  
    - Comprehensive scan:  
      ```bash
-     ./netscan.sh example.com
+     bash netscan.sh -o scan_report.txt
      ```
    - Fast scan (top ports):  
      ```bash
